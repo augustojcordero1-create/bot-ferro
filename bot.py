@@ -35,7 +35,7 @@ async def on_ready():
                 texto = entry.title.lower()
 
                 if any(palabra in texto for palabra in PALABRAS_CLAVE):
-                    mensaje = f"🟢 **Nueva noticia de Ferro**\n{entry.title}\n{entry.link}"
+                    mensaje = f"🟢 **FERRO | MERCADO DE PASES**\n{entry.title}\n{entry.link}"
                     await canal.send(mensaje)
 
                 ultimos_tweets.add(entry.id)
