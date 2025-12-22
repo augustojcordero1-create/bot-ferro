@@ -5,7 +5,7 @@ import asyncio
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
-RSS_URI = "https://nitter.net/MDePasesPN/rss"
+RSS_URI = "https://rsshub.app/twitter/user/MDPasesPM"
 
 PALABRAS_CLAVE = [
     "refuerzo",
