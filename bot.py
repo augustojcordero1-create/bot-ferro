@@ -7,14 +7,25 @@ TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 RSS_URI = "https://rsshub.app/twitter/user/MDPasesPM"
 
-PALABRAS_CLAVE = [
+PALABRAS_PASES = [
     "refuerzo",
     "transferencia",
     "alta",
     "baja",
     "llega",
     "se va",
-    "ferro"
+    "incorpora",
+    "incorporó",
+    "firma",
+    "firmó"
+]
+
+PALABRAS_FERRO = [
+    "ferro",
+    "ferro carril oeste",
+    "verdolaga",
+    "verdolagas",
+    "caballito"
 ]
 
 intents = discord.Intents.default()
@@ -42,9 +53,14 @@ async def check_rss():
 
             for entry in feed.entries:
                 if entry.id not in ultimos_tweets:
-                    texto = entry.title.lower()
+                    texto = (entry.title + " " + entry.summary).lower()
 
-                    if any(palabra in texto for palabra in PALABRAS_CLAVE):
+if (
+    any(p in texto for p in PALABRAS_PASES)
+    and
+    any(f in texto for f in PALABRAS_FERRO)
+):
+
                         mensaje = (
                             f"🟢 **FERRO | MERCADO DE PASES**\n\n"
                             f"📝 {entry.title}\n"
