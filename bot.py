@@ -4,8 +4,8 @@ import feedparser
 import asyncio
 
 TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = 1452451999067934942
-RSS_URL = "https://nitter.net/MDePasesPN/rss"
+CHANNEL_ID = int(os.environ["CHANNEL_ID"])
+RSS_URI = "https://nitter.net/MDePasesPN/rss"
 
 PALABRAS_CLAVE = [
     "refuerzo",
