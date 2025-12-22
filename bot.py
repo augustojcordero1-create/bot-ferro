@@ -23,19 +23,19 @@ client = discord.Client(intents=intents)
 ultimos_tweets = set()
 
 @client.event
-async def on_ready():
-    print(f"Bot conectado como {client.user}")
-    canal = client.get_channel(CHANNEL_ID)
+async def check_rss():
+    await client.wait_until_ready()
+    canal = client.get_channel(int(CHANNEL_ID))
 
     while True:
-        feed = feedparser.parse(RSS_URL)
+        feed = feedparser.parse(RSS_URI)
 
         for entry in feed.entries:
             if entry.id not in ultimos_tweets:
                 texto = entry.title.lower()
 
                 if any(palabra in texto for palabra in PALABRAS_CLAVE):
-                    mensaje = f"🟢 **FERRO | MERCADO DE PASES**\n{entry.title}\n{entry.link}"
+                    mensaje = f"🟢 **FERRO | MERCADO DE PASES**\n\n📝 {entry.title}\n🔗 {entry.link}"
                     await canal.send(mensaje)
 
                 ultimos_tweets.add(entry.id)
