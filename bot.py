@@ -9,12 +9,12 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
-import unicodedata  # <--- agregado para normalizar acentos
+import unicodedata  
 
 # =========================
 # CARGAR VARIABLES DE ENTORNO DESDE .ENV
 # =========================
-load_dotenv()  # Lee automáticamente el archivo .env
+load_dotenv()  
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID_MERCADO = int(os.environ["CHANNEL_ID_MERCADO"])
@@ -22,10 +22,10 @@ CHANNEL_ID_BASQUET = int(os.environ["CHANNEL_ID_BASQUET"])
 CHANNEL_ID_FUTBOL = int(os.environ["CHANNEL_ID_FUTBOL"])
 API_FOOTBALL_KEY = os.environ["API_FOOTBALL_KEY"]
 
-FERRO_TEAM_ID = 457  # Ferro Carril Oeste
+FERRO_TEAM_ID = 457	  # Confirmar ID oficial 2026 en API
 
 # =========================
-# ESCUDOS DE RIVALES ACTUALIZADOS
+# ESCUDOS DE RIVALES
 # =========================
 ESCUDOS_RIVALES = {
     "SAN TELMO": "🔵⚪",
@@ -49,7 +49,7 @@ ESCUDOS_RIVALES = {
 }
 
 # =========================
-# RSS
+# RSS (Nitter)
 # =========================
 RSS_MDPASES = "https://nitter.auct.eu/MDPasesPM/rss"
 RSS_FERRO_OFICIAL = "https://nitter.auct.eu/FerroOficial/rss"
@@ -69,7 +69,6 @@ PALABRAS_FERRO = [
     "verdolaga", "verdolagas", "caballito"
 ]
 
-# Ahora incluye "vinculo"
 PALABRAS_JUGADOR = ["jugador", "vinculo"]
 
 # =========================
@@ -89,14 +88,12 @@ partidos_segundo_tiempo = set()
 partidos_finalizados = set()
 partidos_previas = set()
 eventos_partido = {}  # Para resumen final
+previa_mensajes = {}  # fixture_id -> message_id para borrar previa anterior
 
 # =========================
 # FUNCIONES RSS
 # =========================
 def limpiar(entry):
-    """
-    Convierte a minúsculas, elimina '#' y normaliza acentos
-    """
     texto = (entry.title + " " + getattr(entry, "summary", "")).lower().replace("#", "")
     texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
     return texto
@@ -165,6 +162,12 @@ def formatear_previa(partido):
         f"🏟️ {estadio}"
     )
 
+def formatear_alineacion(lineups):
+    titulares = [p["player"]["name"] for p in lineups["startXI"]]
+    suplentes = [p["player"]["name"] for p in lineups["substitutes"]]
+    msg = "**Titulares:** " + ", ".join(titulares) + "\n**Suplentes:** " + ", ".join(suplentes)
+    return msg
+
 def formatear_marcador(gf, gr, rival):
     escudo_rival = ESCUDOS_RIVALES.get(rival, "")
     return f"💚 Ferro {gf} – {gr} {escudo_rival} {rival}"
@@ -224,6 +227,7 @@ async def check_ferro_futbol():
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
     while True:
         try:
+            # Obtener fixtures en vivo y próximos
             r = requests.get("https://v3.football.api-sports.io/fixtures?live=all", headers=headers)
             data = r.json().get("response", [])
             now = datetime.utcnow()
@@ -239,31 +243,56 @@ async def check_ferro_futbol():
                 rival = away["name"] if ferro_local else home["name"]
                 gf = partido["goals"]["home"] if ferro_local else partido["goals"]["away"]
                 gr = partido["goals"]["away"] if ferro_local else partido["goals"]["home"]
-                if fixture_id not in eventos_partido:
-                    eventos_partido[fixture_id] = {}
-                # Previa 1 hora
-                if 0 <= (fixture_time - now).total_seconds() <= 3600 and fixture_id not in partidos_previas:
+
+                # =========================
+                # Previa a las 00:00
+                # =========================
+                now_arg = datetime.utcnow() + timedelta(hours=-3)  # Ajuste hora argentina
+                if now_arg.hour == 0 and fixture_id not in partidos_previas:
+                    # Borrar previa anterior solo si es del mismo partido
+                    if fixture_id in previa_mensajes:
+                        try:
+                            old_msg = await canal.fetch_message(previa_mensajes[fixture_id])
+                            await old_msg.delete()
+                        except:
+                            pass
                     msg_previa = formatear_previa(partido)
-                    await canal.send(msg_previa)
+                    msg = await canal.send(f"@everyone\n{msg_previa}")
+                    previa_mensajes[fixture_id] = msg.id
                     partidos_previas.add(fixture_id)
+
+                # =========================
+                # Alineación
+                # =========================
+                lineups = partido.get("lineups")
+                if lineups:
+                    msg_alineacion = formatear_alineacion(lineups)
+                    await canal.send(f"📝 Alineación de {rival} vs Ferro:\n{msg_alineacion}")
+
+                # =========================
                 # Inicio
+                # =========================
                 if status == "1H" and fixture_id not in partidos_iniciados:
                     await canal.send(f"@everyone\n▶ ARRANCÓ EL PARTIDO\n🟢 {formatear_marcador(gf, gr, rival)}")
                     partidos_iniciados.add(fixture_id)
+
                 # Entretiempo
                 if status == "HT" and fixture_id not in partidos_entretiempo:
                     msg = formatear_entretiempo(gf, gr, rival)
                     await canal.send(msg)
                     partidos_entretiempo.add(fixture_id)
+
                 # Segundo tiempo
                 if status == "2H" and fixture_id not in partidos_segundo_tiempo:
                     await canal.send(f"@everyone\n🔄 ARRANCÓ EL SEGUNDO TIEMPO\n🟢 {formatear_marcador(gf, gr, rival)}")
                     partidos_segundo_tiempo.add(fixture_id)
+
                 # Final
                 if status == "FT" and fixture_id not in partidos_finalizados:
                     msg = formatear_final(gf, gr, rival)
                     await canal.send(msg)
                     partidos_finalizados.add(fixture_id)
+
                 # Eventos en vivo
                 for e in partido.get("events", []):
                     eid = f'{fixture_id}-{e["time"]["elapsed"]}-{e["type"]}-{e["detail"]}'
@@ -280,7 +309,8 @@ async def check_ferro_futbol():
                     if msg:
                         await canal.send(msg)
                         eventos_enviados.add(eid)
-                        eventos_partido[fixture_id][eid] = e
+                        eventos_partido.setdefault(fixture_id, {})[eid] = e
+
             await asyncio.sleep(30)
         except Exception as e:
             print("Error fútbol:", e)
