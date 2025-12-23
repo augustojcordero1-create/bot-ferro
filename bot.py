@@ -7,7 +7,8 @@ import os
 # VARIABLES DE ENTORNO
 # =========================
 TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = int(os.environ["CHANNEL_ID"])
+CHANNEL_ID_MERCADO = int(os.environ["CHANNEL_ID_MERCADO"])
+CHANNEL_ID_BASQUET = int(os.environ["CHANNEL_ID_BASQUET"])
 
 # =========================
 # RSS
@@ -39,53 +40,24 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 # =========================
-# MEMORIA GLOBAL (ANTI DUPES)
+# MEMORIA GLOBAL
 # =========================
 tweets_enviados = set()
 
 # =========================
-# FUNCIONES UTILITARIAS
+# FUNCIONES
 # =========================
-def limpiar_texto(entry):
+def limpiar(entry):
     return (
         entry.title + " " + getattr(entry, "summary", "")
     ).lower().replace("#", "")
 
 async def enviar(canal, titulo, emoji, entry):
-    mensaje = (
+    await canal.send(
         f"{emoji} **{titulo}**\n\n"
         f"📝 {entry.title}\n"
         f"🔗 {entry.link}"
     )
-    await canal.send(mensaje)
-
-# =========================
-# DEFINICIÓN DE FEEDS
-# =========================
-FEEDS = [
-    {
-        "titulo": "FERRO | MERCADO DE PASES",
-        "emoji": "🟢",
-        "url": RSS_MDPASES,
-        "filtro": lambda t: (
-            any(p in t for p in PALABRAS_PASES)
-            and
-            any(f in t for f in PALABRAS_FERRO)
-        )
-    },
-    {
-        "titulo": "FERRO | COMUNICADO OFICIAL",
-        "emoji": "🟢",
-        "url": RSS_FERRO_OFICIAL,
-        "filtro": lambda t: any(p in t for p in PALABRAS_JUGADOR)
-    },
-    {
-        "titulo": "FERRO BÁSQUET",
-        "emoji": "🏀",
-        "url": RSS_FERRO_BASQUET,
-        "filtro": lambda t: "#ferro" in t
-    }
-]
 
 # =========================
 # EVENTO READY
@@ -96,44 +68,69 @@ async def on_ready():
     client.loop.create_task(check_rss())
 
 # =========================
-# LOOP PRINCIPAL RSS
+# LOOP RSS
 # =========================
 async def check_rss():
     await client.wait_until_ready()
-    canal = client.get_channel(CHANNEL_ID)
 
-    if canal is None:
-        print("ERROR: Canal no encontrado")
+    canal_mercado = client.get_channel(CHANNEL_ID_MERCADO)
+    canal_basquet = client.get_channel(CHANNEL_ID_BASQUET)
+
+    if not canal_mercado or not canal_basquet:
+        print("ERROR: uno de los canales no existe")
         return
 
     while True:
         try:
-            for feed in FEEDS:
-                rss = feedparser.parse(feed["url"])
-
-                for entry in rss.entries:
-                    if entry.id in tweets_enviados:
-                        continue
-
-                    texto = limpiar_texto(entry)
-
-                    if feed["filtro"](texto):
+            # ================= MERCADO DE PASES =================
+            for entry in feedparser.parse(RSS_MDPASES).entries:
+                if entry.id not in tweets_enviados:
+                    texto = limpiar(entry)
+                    if (
+                        any(p in texto for p in PALABRAS_PASES)
+                        and any(f in texto for f in PALABRAS_FERRO)
+                    ):
                         await enviar(
-                            canal,
-                            feed["titulo"],
-                            feed["emoji"],
+                            canal_mercado,
+                            "FERRO | MERCADO DE PASES",
+                            "🟢",
                             entry
                         )
-
                     tweets_enviados.add(entry.id)
 
-            await asyncio.sleep(300)  # 5 minutos
+            # ================= FERRO OFICIAL =================
+            for entry in feedparser.parse(RSS_FERRO_OFICIAL).entries:
+                if entry.id not in tweets_enviados:
+                    texto = limpiar(entry)
+                    if any(p in texto for p in PALABRAS_JUGADOR):
+                        await enviar(
+                            canal_mercado,
+                            "FERRO | COMUNICADO OFICIAL",
+                            "🟢",
+                            entry
+                        )
+                    tweets_enviados.add(entry.id)
+
+            # ================= FERRO BÁSQUET =================
+            for entry in feedparser.parse(RSS_FERRO_BASQUET).entries:
+                if entry.id not in tweets_enviados:
+                    texto = (entry.title + " " + getattr(entry, "summary", "")).lower()
+                    if "#ferro" in texto:
+                        await enviar(
+                            canal_basquet,
+                            "FERRO BÁSQUET",
+                            "🏀",
+                            entry
+                        )
+                    tweets_enviados.add(entry.id)
+
+            await asyncio.sleep(300)
 
         except Exception as e:
-            print(f"Error RSS: {e}")
+            print("Error RSS:", e)
             await asyncio.sleep(60)
 
 # =========================
-# RUN BOT
+# RUN
 # =========================
 client.run(TOKEN)
