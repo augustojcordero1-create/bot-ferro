@@ -3,6 +3,7 @@ import asyncio
 import feedparser
 import os
 import requests
+from datetime import datetime, timedelta
 
 # =========================
 # VARIABLES DE ENTORNO
@@ -50,7 +51,6 @@ client = discord.Client(intents=intents)
 # MEMORIA GLOBAL
 # =========================
 tweets_enviados = set()
-
 eventos_enviados = set()
 partidos_iniciados = set()
 partidos_entretiempo = set()
@@ -58,19 +58,47 @@ partidos_segundo_tiempo = set()
 partidos_finalizados = set()
 
 # =========================
-# FUNCIONES RSS
+# MODO PRUEBA (simulación)
+# =========================
+SIMULAR_PARTIDO = True
+
+# =========================
+# FUNCIONES AUXILIARES
 # =========================
 def limpiar(entry):
-    return (
-        entry.title + " " + getattr(entry, "summary", "")
-    ).lower().replace("#", "")
+    return (entry.title + " " + getattr(entry, "summary", "")).lower().replace("#", "")
 
 async def enviar(canal, titulo, emoji, entry):
-    await canal.send(
-        f"{emoji} **{titulo}**\n\n"
-        f"📝 {entry.title}\n"
-        f"🔗 {entry.link}"
-    )
+    await canal.send(f"{emoji} **{titulo}**\n\n📝 {entry.title}\n🔗 {entry.link}")
+
+# Formato estilo cancha
+def formatear_gol(evento, rival, gf, gr):
+    if evento["team"]["id"] == FERRO_TEAM_ID:
+        return f"⚽ GOOOOOL DE FERROOOOOO 💚\n🟢 Ferro {gf} – {gr} {rival}\n🕒 {evento['time']['elapsed']}'\n¡DALE VERDOLAGA!"
+    else:
+        return f"😡 GOL DEL RIVAL\n🔴 Ferro {gf} – {gr} {rival}\n🕒 {evento['time']['elapsed']}'"
+
+def formatear_penal(evento, rival, gf, gr):
+    if evento["team"]["id"] == FERRO_TEAM_ID:
+        return f"⚠️ PENAL PARA FERRO 💚\n🟢 Ferro {gf} – {gr} {rival}\n🕒 {evento['time']['elapsed']}'"
+    else:
+        return f"⚠️ PENAL PARA {rival}\n🔴 Ferro {gf} – {gr} {rival}\n🕒 {evento['time']['elapsed']}'"
+
+def formatear_tarjeta(evento, rival):
+    color = "🟨" if evento["detail"] == "Yellow Card" else "🟥"
+    equipo = "Ferro" if evento["team"]["id"] == FERRO_TEAM_ID else rival
+    return f"{color} {evento['detail']}\n👤 {evento['player']['name']} ({equipo})\n🕒 {evento['time']['elapsed']}'"
+
+def formatear_entretiempo(gf, gr, rival):
+    return f"⏱️ ENTRETIEMPO EN CABALLITO\n🟢 Ferro {gf} – {gr} {rival}"
+
+def formatear_final(gf, gr, rival):
+    if gf > gr:
+        return f"🏁 FINAL DEL PARTIDO 🟢\n💚 GANÓ FERRO\nFerro {gf} – {gr} {rival}\n¡Vamos Verdolaga!"
+    elif gf == gr:
+        return f"🏁 FINAL 🟡\nFerro {gf} – {gr} {rival}\nEMPATE"
+    else:
+        return f"🏁 FINAL 🔴\nFerro {gf} – {gr} {rival}\nDERROTA"
 
 # =========================
 # READY
@@ -86,7 +114,6 @@ async def on_ready():
 # =========================
 async def check_rss():
     await client.wait_until_ready()
-
     canal_mercado = client.get_channel(CHANNEL_ID_MERCADO)
     canal_basquet = client.get_channel(CHANNEL_ID_BASQUET)
 
@@ -95,10 +122,7 @@ async def check_rss():
             for entry in feedparser.parse(RSS_MDPASES).entries:
                 if entry.id not in tweets_enviados:
                     texto = limpiar(entry)
-                    if (
-                        any(p in texto for p in PALABRAS_PASES)
-                        and any(f in texto for f in PALABRAS_FERRO)
-                    ):
+                    if any(p in texto for p in PALABRAS_PASES) and any(f in texto for f in PALABRAS_FERRO):
                         await enviar(canal_mercado, "FERRO | MERCADO DE PASES", "🟢", entry)
                     tweets_enviados.add(entry.id)
 
@@ -115,7 +139,6 @@ async def check_rss():
                     tweets_enviados.add(entry.id)
 
             await asyncio.sleep(300)
-
         except Exception as e:
             print("Error RSS:", e)
             await asyncio.sleep(60)
@@ -126,16 +149,30 @@ async def check_rss():
 async def check_ferro_futbol():
     await client.wait_until_ready()
     canal = client.get_channel(CHANNEL_ID_FUTBOL)
-
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
 
     while True:
         try:
-            r = requests.get(
-                "https://v3.football.api-sports.io/fixtures?live=all",
-                headers=headers
-            )
-            data = r.json().get("response", [])
+            if SIMULAR_PARTIDO:
+                # Datos de prueba
+                data = [
+                    {
+                        "fixture": {"id": 12345, "status": {"short": "1H"}, "date": datetime.utcnow().isoformat(), "venue": {"name": "Estadio Arquitecto Etcheverry"}},
+                        "teams": {"home": {"id": FERRO_TEAM_ID, "name": "Ferro"}, "away": {"id": 999, "name": "Chacarita"}},
+                        "goals": {"home": 1, "away": 1},
+                        "events": [
+                            {"time": {"elapsed": 37}, "player": {"name": "Pérez"}, "team": {"id": FERRO_TEAM_ID}, "type": "Goal", "detail": ""},
+                            {"time": {"elapsed": 52}, "player": {"name": "López"}, "team": {"id": 999}, "type": "Goal", "detail": ""},
+                            {"time": {"elapsed": 63}, "player": {"name": "Gómez"}, "team": {"id": FERRO_TEAM_ID}, "type": "Penalty", "detail": "Penalty scored"},
+                            {"time": {"elapsed": 64}, "player": {"name": "Rival"}, "team": {"id": 999}, "type": "Penalty", "detail": "Penalty missed"},
+                            {"time": {"elapsed": 41}, "player": {"name": "Martínez"}, "team": {"id": FERRO_TEAM_ID}, "type": "Card", "detail": "Yellow Card"},
+                            {"time": {"elapsed": 78}, "player": {"name": "González"}, "team": {"id": 999}, "type": "Card", "detail": "Red Card"}
+                        ]
+                    }
+                ]
+            else:
+                r = requests.get("https://v3.football.api-sports.io/fixtures?live=all", headers=headers)
+                data = r.json().get("response", [])
 
             for partido in data:
                 home = partido["teams"]["home"]
@@ -148,22 +185,21 @@ async def check_ferro_futbol():
                 status = partido["fixture"]["status"]["short"]
 
                 ferro_local = home["id"] == FERRO_TEAM_ID
-                rival = away["name"] if ferro_local else home["name"]
+                rival_name = away["name"] if ferro_local else home["name"]
 
                 gf = partido["goals"]["home"] if ferro_local else partido["goals"]["away"]
                 gr = partido["goals"]["away"] if ferro_local else partido["goals"]["home"]
 
-                marcador = f"**Ferro {gf} - {gr} {rival}**"
+                marcador = f"Ferro {gf} - {gr} {rival_name}"
 
-                # INICIO
+                # INICIO PARTIDO
                 if status == "1H" and fixture_id not in partidos_iniciados:
                     await canal.send(f"@everyone\n▶ ARRANCÓ EL PARTIDO\n{marcador}")
                     partidos_iniciados.add(fixture_id)
 
                 # ENTRETIEMPO
                 if status == "HT" and fixture_id not in partidos_entretiempo:
-                    emoji = "🟢" if gf > gr else "🟡" if gf == gr else "🔴"
-                    await canal.send(f"@everyone\n⏸ ENTRETIEMPO {emoji}\n{marcador}")
+                    await canal.send(f"@everyone\n⏱ ENTRETIEMPO\n{marcador}")
                     partidos_entretiempo.add(fixture_id)
 
                 # SEGUNDO TIEMPO
@@ -173,35 +209,28 @@ async def check_ferro_futbol():
 
                 # FINAL
                 if status == "FT" and fixture_id not in partidos_finalizados:
-                    emoji = "🟢" if gf > gr else "🟡" if gf == gr else "🔴"
-                    await canal.send(f"@everyone\n{emoji} FINAL DEL PARTIDO\n{marcador}")
+                    await canal.send(f"@everyone\n{formatear_final(gf, gr, rival_name)}")
                     partidos_finalizados.add(fixture_id)
 
+                # EVENTOS
                 for e in partido["events"]:
                     eid = f'{fixture_id}-{e["time"]["elapsed"]}-{e["type"]}-{e["detail"]}'
                     if eid in eventos_enviados:
                         continue
 
                     msg = None
-                    jugador = e["player"]["name"]
-                    minuto = e["time"]["elapsed"]
-
                     if e["type"] == "Goal":
-                        if e["team"]["id"] == FERRO_TEAM_ID:
-                            msg = f"@everyone\n⚽ GOL DE FERRO\n👤 {jugador}\n⏱ {minuto}'\n{marcador}"
-                        else:
-                            msg = f"⚽ Gol del rival ({rival})\n{marcador}"
-
+                        msg = formatear_gol(e, rival_name, gf, gr)
+                    elif e["type"] == "Penalty":
+                        msg = formatear_penal(e, rival_name, gf, gr)
                     elif e["type"] == "Card":
-                        emoji = "🟨" if e["detail"] == "Yellow Card" else "🟥"
-                        msg = f"{emoji} {e['detail']}\n👤 {jugador}\n⏱ {minuto}'"
+                        msg = formatear_tarjeta(e, rival_name)
 
                     if msg:
                         await canal.send(msg)
                         eventos_enviados.add(eid)
 
             await asyncio.sleep(30)
-
         except Exception as e:
             print("Error fútbol:", e)
             await asyncio.sleep(30)
