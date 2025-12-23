@@ -9,6 +9,7 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+import unicodedata  # <--- agregado para normalizar acentos
 
 # =========================
 # CARGAR VARIABLES DE ENTORNO DESDE .ENV
@@ -50,9 +51,9 @@ ESCUDOS_RIVALES = {
 # =========================
 # RSS
 # =========================
-RSS_MDPASES = "https://rsshub.app/twitter/user/MDPasesPM"
-RSS_FERRO_OFICIAL = "https://rsshub.app/twitter/user/FerroOficial"
-RSS_FERRO_BASQUET = "https://rsshub.app/twitter/user/ferrobasquetok"
+RSS_MDPASES = "https://nitter.auct.eu/MDPasesPM/rss"
+RSS_FERRO_OFICIAL = "https://nitter.auct.eu/FerroOficial/rss"
+RSS_FERRO_BASQUET = "https://nitter.auct.eu/ferrobasquetok/rss"
 
 # =========================
 # PALABRAS CLAVE
@@ -68,7 +69,8 @@ PALABRAS_FERRO = [
     "verdolaga", "verdolagas", "caballito"
 ]
 
-PALABRAS_JUGADOR = ["jugador"]
+# Ahora incluye "vinculo"
+PALABRAS_JUGADOR = ["jugador", "vinculo"]
 
 # =========================
 # DISCORD CLIENT
@@ -92,7 +94,12 @@ eventos_partido = {}  # Para resumen final
 # FUNCIONES RSS
 # =========================
 def limpiar(entry):
-    return (entry.title + " " + getattr(entry, "summary", "")).lower().replace("#", "")
+    """
+    Convierte a minúsculas, elimina '#' y normaliza acentos
+    """
+    texto = (entry.title + " " + getattr(entry, "summary", "")).lower().replace("#", "")
+    texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
+    return texto
 
 async def enviar(canal, titulo, emoji, entry):
     await canal.send(f"{emoji} **{titulo}**\n\n📝 {entry.title}\n🔗 {entry.link}")
@@ -124,13 +131,14 @@ async def check_rss():
 
             for entry in feedparser.parse(RSS_FERRO_OFICIAL).entries:
                 if entry.id not in tweets_enviados:
-                    if any(p in limpiar(entry) for p in PALABRAS_JUGADOR):
+                    texto = limpiar(entry)
+                    if any(p in texto for p in PALABRAS_JUGADOR):
                         await enviar(canal_mercado, "FERRO | COMUNICADO OFICIAL", "🟢", entry)
                     tweets_enviados.add(entry.id)
 
             for entry in feedparser.parse(RSS_FERRO_BASQUET).entries:
                 if entry.id not in tweets_enviados:
-                    if "#ferro" in (entry.title + entry.summary).lower():
+                    if "#ferro" in (entry.title + getattr(entry, "summary", "")).lower():
                         await enviar(canal_basquet, "FERRO BÁSQUET", "🏀", entry)
                     tweets_enviados.add(entry.id)
 
