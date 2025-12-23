@@ -9,7 +9,8 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
-import unicodedata  
+import unicodedata
+from aiohttp import web  
 
 # =========================
 # CARGAR VARIABLES DE ENTORNO DESDE .ENV
