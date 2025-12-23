@@ -9,45 +9,28 @@ import os
 TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = int(os.environ["CHANNEL_ID"])
 
+# =========================
 # RSS
+# =========================
 RSS_MDPASES = "https://rsshub.app/twitter/user/MDPasesPM"
 RSS_FERRO_OFICIAL = "https://rsshub.app/twitter/user/FerroOficial"
+RSS_FERRO_BASQUET = "https://rsshub.app/twitter/user/ferrobasquetok"
 
 # =========================
 # PALABRAS CLAVE
 # =========================
-
-# Mercado de pases
 PALABRAS_PASES = [
-    "refuerzo",
-    "refuerzos",
-    "transferencia",
-    "alta",
-    "baja",
-    "llega",
-    "llegó",
-    "se va",
-    "incorpora",
-    "incorporó",
-    "firma",
-    "firmó",
-    "nuevo jugador"
+    "refuerzo", "refuerzos", "transferencia", "alta", "baja",
+    "llega", "llegó", "se va", "incorpora", "incorporó",
+    "firma", "firmó", "nuevo jugador"
 ]
 
-# Identificadores de Ferro
 PALABRAS_FERRO = [
-    "ferro",
-    "#ferro",
-    "ferro carril oeste",
-    "verdolaga",
-    "verdolagas",
-    "caballito"
+    "ferro", "ferro carril oeste",
+    "verdolaga", "verdolagas", "caballito"
 ]
 
-# Ferro Oficial
-PALABRAS_JUGADOR = [
-    "jugador"
-]
+PALABRAS_JUGADOR = ["jugador"]
 
 # =========================
 # DISCORD CLIENT
@@ -55,9 +38,54 @@ PALABRAS_JUGADOR = [
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
-# Memoria de tweets
-ultimos_tweets_mdpases = set()
-ultimos_tweets_ferro_oficial = set()
+# =========================
+# MEMORIA GLOBAL (ANTI DUPES)
+# =========================
+tweets_enviados = set()
+
+# =========================
+# FUNCIONES UTILITARIAS
+# =========================
+def limpiar_texto(entry):
+    return (
+        entry.title + " " + getattr(entry, "summary", "")
+    ).lower().replace("#", "")
+
+async def enviar(canal, titulo, emoji, entry):
+    mensaje = (
+        f"{emoji} **{titulo}**\n\n"
+        f"📝 {entry.title}\n"
+        f"🔗 {entry.link}"
+    )
+    await canal.send(mensaje)
+
+# =========================
+# DEFINICIÓN DE FEEDS
+# =========================
+FEEDS = [
+    {
+        "titulo": "FERRO | MERCADO DE PASES",
+        "emoji": "🟢",
+        "url": RSS_MDPASES,
+        "filtro": lambda t: (
+            any(p in t for p in PALABRAS_PASES)
+            and
+            any(f in t for f in PALABRAS_FERRO)
+        )
+    },
+    {
+        "titulo": "FERRO | COMUNICADO OFICIAL",
+        "emoji": "🟢",
+        "url": RSS_FERRO_OFICIAL,
+        "filtro": lambda t: any(p in t for p in PALABRAS_JUGADOR)
+    },
+    {
+        "titulo": "FERRO BÁSQUET",
+        "emoji": "🏀",
+        "url": RSS_FERRO_BASQUET,
+        "filtro": lambda t: "#ferro" in t
+    }
+]
 
 # =========================
 # EVENTO READY
@@ -68,76 +96,41 @@ async def on_ready():
     client.loop.create_task(check_rss())
 
 # =========================
-# CHECK RSS
+# LOOP PRINCIPAL RSS
 # =========================
 async def check_rss():
     await client.wait_until_ready()
     canal = client.get_channel(CHANNEL_ID)
 
     if canal is None:
-        print("ERROR: No se encontró el canal")
+        print("ERROR: Canal no encontrado")
         return
 
     while True:
         try:
-            # ==================================================
-            # RSS MDPASES (MERCADO DE PASES – SOLO FERRO)
-            # ==================================================
-            feed_mdpases = feedparser.parse(RSS_MDPASES)
+            for feed in FEEDS:
+                rss = feedparser.parse(feed["url"])
 
-            for entry in feed_mdpases.entries:
-                if entry.id not in ultimos_tweets_mdpases:
-                    texto = (
-                        entry.title +
-                        " " +
-                        getattr(entry, "summary", "")
-                    ).lower()
+                for entry in rss.entries:
+                    if entry.id in tweets_enviados:
+                        continue
 
-                    texto = texto.replace("#", "")
+                    texto = limpiar_texto(entry)
 
-                    if (
-                        any(p in texto for p in PALABRAS_PASES)
-                        and
-                        any(f.replace("#", "") in texto for f in PALABRAS_FERRO)
-                    ):
-                        mensaje = (
-                            "🟢 **FERRO | MERCADO DE PASES**\n\n"
-                            f"📝 {entry.title}\n"
-                            f"🔗 {entry.link}"
+                    if feed["filtro"](texto):
+                        await enviar(
+                            canal,
+                            feed["titulo"],
+                            feed["emoji"],
+                            entry
                         )
-                        await canal.send(mensaje)
 
-                    ultimos_tweets_mdpases.add(entry.id)
-
-            # ==================================================
-            # RSS FERRO OFICIAL (SOLO “JUGADOR”)
-            # ==================================================
-            feed_ferro = feedparser.parse(RSS_FERRO_OFICIAL)
-
-            for entry in feed_ferro.entries:
-                if entry.id not in ultimos_tweets_ferro_oficial:
-                    texto = (
-                        entry.title +
-                        " " +
-                        getattr(entry, "summary", "")
-                    ).lower()
-
-                    texto = texto.replace("#", "")
-
-                    if any(p in texto for p in PALABRAS_JUGADOR):
-                        mensaje = (
-                            "🟢 **FERRO | COMUNICADO OFICIAL**\n\n"
-                            f"📝 {entry.title}\n"
-                            f"🔗 {entry.link}"
-                        )
-                        await canal.send(mensaje)
-
-                    ultimos_tweets_ferro_oficial.add(entry.id)
+                    tweets_enviados.add(entry.id)
 
             await asyncio.sleep(300)  # 5 minutos
 
         except Exception as e:
-            print(f"Error en RSS: {e}")
+            print(f"Error RSS: {e}")
             await asyncio.sleep(60)
 
 # =========================
