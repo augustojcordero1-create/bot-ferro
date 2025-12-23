@@ -317,6 +317,24 @@ async def check_ferro_futbol():
             await asyncio.sleep(30)
 
 # =========================
+# SERVIDOR HTTP PARA KOYEB
+# =========================
+async def handle(request):
+    return web.Response(text="Bot de Ferro corriendo ✅")
+
+app = web.Application()
+app.router.add_get("/", handle)
+
+# =========================
 # RUN
 # =========================
-client.run(TOKEN)
+# Iniciar HTTP server y bot de Discord juntos
+async def main():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, port=int(os.environ.get("PORT", 8080)))
+    await site.start()
+    print("HTTP server activo en el puerto", os.environ.get("PORT", 8080))
+    await client.start(TOKEN)
+
+asyncio.run(main())
